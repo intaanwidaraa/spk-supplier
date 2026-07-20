@@ -31,10 +31,5 @@ class ListCriterias extends ListRecords
         ];
     }
 
-    protected function getHeaderWidgets(): array
-    {
-        return [
-            CriteriaStatsOverview::class,
-        ];
-    }
+
 }

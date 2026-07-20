@@ -16,132 +16,119 @@ use Filament\Tables\Table;
 class CriteriaResource extends Resource
 {
     protected static ?string $model = Criteria::class;
-    protected static bool $shouldRegisterNavigation = false;
 
-    protected static ?string $slug = 'master-kriteria';
-    protected static ?string $navigationIcon =
-        'heroicon-o-adjustments-horizontal';
+    protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
-    protected static ?string $navigationLabel =
-        'Kelola Kriteria';
+    protected static ?string $navigationLabel = 'Kelola Kriteria';
+    
+    protected static ?string $slug = 'kelola-kriteria';
 
-    protected static ?string $modelLabel =
-        'Kriteria';
+    protected static ?string $navigationGroup = 'Master Data';
 
-    protected static ?string $pluralModelLabel =
-        'Kriteria';
+    protected static ?string $modelLabel = 'Kriteria';
 
-    protected static ?string $recordTitleAttribute =
-        'nama_kriteria';
+    protected static ?string $pluralModelLabel = 'Kriteria';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?string $recordTitleAttribute = 'nama_kriteria';
+
+    protected static ?int $navigationSort = 3;
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make(
-                    'Data Kriteria Penilaian'
-                )
-                    ->description(
-                        'Kelola parameter, sifat, dan bobot kriteria untuk evaluasi supplier.'
-                    )
+                Forms\Components\Section::make('Data Kriteria')
+                    ->description('Kelola detail kriteria penilaian supplier.')
                     ->schema([
-                        Forms\Components\TextInput::make(
-                            'kode_kriteria'
-                        )
-                            ->label('ID Kriteria')
-                            ->default(
-                                fn (): string =>
-                                    Criteria::generateNextCode()
-                            )
+                        Forms\Components\TextInput::make('kode_kriteria')
+                            ->label('Kode Kriteria')
+                            ->default(fn (): string => Criteria::generateNextCode())
                             ->disabled()
                             ->dehydrated()
                             ->required()
-                            ->unique(
-                                table: Criteria::class,
-                                column: 'kode_kriteria',
-                                ignoreRecord: true
-                            ),
+                            ->unique(table: Criteria::class, column: 'kode_kriteria', ignoreRecord: true),
 
-                        Forms\Components\TextInput::make(
-                            'nama_kriteria'
-                        )
-                            ->label('Nama Kriteria')
-                            ->placeholder(
-                                'Contoh: Harga Penawaran'
-                            )
+                        Forms\Components\TextInput::make('nama_kriteria')
+                            ->label('Jenis Kriteria / Nama Kriteria')
                             ->required()
                             ->maxLength(255),
 
-                        Forms\Components\Select::make(
-                            'sifat_kriteria'
-                        )
-                            ->label('Sifat Kriteria')
+                        Forms\Components\Select::make('atribut')
+                            ->label('Atribut')
                             ->options([
-                                'COST' => 'COST',
                                 'BENEFIT' => 'BENEFIT',
+                                'COST' => 'COST',
                             ])
-                            ->helperText(
-                                'COST: semakin kecil semakin baik. BENEFIT: semakin besar semakin baik.'
-                            )
-                            ->native(false)
-                            ->required(),
-
-                        Forms\Components\TextInput::make(
-                            'bobot_default'
-                        )
-                            ->label('Bobot Default')
-                            ->numeric()
-                            ->minValue(0)
-                            ->maxValue(100)
-                            ->step(0.01)
-                            ->suffix('%')
-                            ->placeholder('Contoh: 25')
                             ->required()
-                            ->rules(
-                                fn (
-                                    ?Criteria $record
-                                ): array => [
-                                    function (
-                                        string $attribute,
-                                        mixed $value,
-                                        Closure $fail
-                                    ) use ($record): void {
-                                        $query = Criteria::query();
+                            ->native(false),
 
-                                        if ($record?->exists) {
-                                            $query->where(
-                                                'id',
-                                                '!=',
-                                                $record->getKey()
-                                            );
-                                        }
+                        Forms\Components\TextInput::make('calculation_key')
+                            ->label('Calculation Key')
+                            ->maxLength(255)
+                            ->helperText('Contoh: repeat_product_rate, partnership_duration'),
+                            
+                        Forms\Components\Textarea::make('short_description')
+                            ->label('Deskripsi Singkat')
+                            ->columnSpanFull()
+                            ->rows(2),
+                    ])->columns(2),
 
-                                        $existingTotal = (float)
-                                            $query->sum(
-                                                'bobot_default'
-                                            );
-
-                                        $newTotal =
-                                            $existingTotal
-                                            + (float) $value;
-
-                                        if ($newTotal > 100.00001) {
-                                            $fail(
-                                                'Total bobot seluruh kriteria tidak boleh melebihi 100%. Total setelah disimpan: '
-                                                . number_format(
-                                                    $newTotal,
-                                                    2
-                                                )
-                                                . '%.'
-                                            );
-                                        }
-                                    },
-                                ]
-                            ),
-                    ])
-                    ->columns(2),
+                Forms\Components\Section::make('Acuan Penilaian Skor')
+                    ->description('Setiap kriteria memiliki skor 1 sampai 5 beserta parameternya.')
+                    ->schema([
+                        Forms\Components\Repeater::make('scoreGuidelines')
+                            ->relationship('scoreGuidelines')
+                            ->label('')
+                            ->schema([
+                                Forms\Components\TextInput::make('score')
+                                    ->label('Skor')
+                                    ->numeric()
+                                    ->required()
+                                    ->readOnly(),
+                                Forms\Components\TextInput::make('subcriteria')
+                                    ->label('Subkriteria')
+                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('quantitative_parameter')
+                                    ->label('Parameter Kuantitatif')
+                                    ->maxLength(255),
+                                Forms\Components\Textarea::make('formula_text')
+                                    ->label('Rumus / Cara Ukur')
+                                    ->rows(2),
+                                Forms\Components\TextInput::make('source_data')
+                                    ->label('Sumber Data')
+                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('min_value')
+                                    ->label('Min Value')
+                                    ->numeric(),
+                                Forms\Components\TextInput::make('max_value')
+                                    ->label('Max Value')
+                                    ->numeric(),
+                                Forms\Components\Select::make('operator')
+                                    ->label('Operator')
+                                    ->options([
+                                        '<' => '<',
+                                        '<=' => '<=',
+                                        '=' => '=',
+                                        '>=' => '>=',
+                                        '>' => '>',
+                                        'BETWEEN' => 'BETWEEN',
+                                    ])
+                                    ->native(false),
+                            ])
+                            ->columns(4)
+                            ->minItems(5)
+                            ->maxItems(5)
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false)
+                            ->default([
+                                ['score' => 1],
+                                ['score' => 2],
+                                ['score' => 3],
+                                ['score' => 4],
+                                ['score' => 5],
+                            ]),
+                    ]),
             ]);
     }
 
@@ -149,62 +136,70 @@ class CriteriaResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make(
-                    'kode_kriteria'
-                )
-                    ->label('ID Kriteria')
+                Tables\Columns\TextColumn::make('kode_kriteria')
+                    ->label('Kode')
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'nama_kriteria'
-                )
-                    ->label('Nama Kriteria')
+                Tables\Columns\TextColumn::make('nama_kriteria')
+                    ->label('Jenis Kriteria')
                     ->searchable()
                     ->sortable()
                     ->wrap(),
 
-                Tables\Columns\TextColumn::make(
-                    'sifat_kriteria'
-                )
-                    ->label('Sifat Kriteria')
+                Tables\Columns\TextColumn::make('atribut')
+                    ->label('Atribut')
                     ->badge()
-                    ->alignCenter()
-                    ->color(
-                        fn (string $state): string =>
-                            match ($state) {
-                                'COST' => 'danger',
-                                'BENEFIT' => 'success',
-                                default => 'gray',
-                            }
-                    ),
+                    ->color(fn (string $state): string => match ($state) {
+                        'BENEFIT' => 'success',
+                        'COST' => 'danger',
+                        default => 'gray',
+                    })
+                    ->searchable()
+                    ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'bobot_default'
-                )
-                    ->label('Bobot Default (%)')
-                    ->numeric(decimalPlaces: 2)
-                    ->suffix('%')
-                    ->alignCenter()
-                    ->sortable()
-                    ->summarize(
-                        Sum::make()
-                            ->label(
-                                'Total Bobot Keseluruhan'
-                            )
-                            ->numeric(decimalPlaces: 2)
-                            ->suffix('%')
-                    ),
+                Tables\Columns\TextColumn::make('calculation_key')
+                    ->label('Calculation Key')
+                    ->searchable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('skor_badges')
+                    ->label('Skor')
+                    ->getStateUsing(fn (Criteria $record) => $record->scoreGuidelines->pluck('score')->toArray())
+                    ->badge()
+                    ->color(fn (string $state): string => match ((string)$state) {
+                        '1' => 'danger',
+                        '2' => 'warning',
+                        '3' => 'gray',
+                        '4' => 'info',
+                        '5' => 'success',
+                        default => 'gray',
+                    }),
+
+                Tables\Columns\TextColumn::make('keterangan_summary')
+                    ->label('Keterangan Parameter')
+                    ->getStateUsing(function (Criteria $record) {
+                        return $record->scoreGuidelines->map(function ($guide) {
+                            $param = $guide->subcriteria ?? $guide->quantitative_parameter ?? '-';
+                            return "<strong>[{$guide->score}]</strong> {$param}";
+                        })->implode('<br>');
+                    })
+                    ->html()
+                    ->tooltip(function (Criteria $record) {
+                        return $record->scoreGuidelines->map(function ($guide) {
+                            $desc = $guide->subcriteria ?? $guide->quantitative_parameter;
+                            return "Skor {$guide->score}: {$desc}";
+                        })->implode("\n");
+                    }),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make(
-                    'sifat_kriteria'
-                )
-                    ->label('Sifat Kriteria')
+                Tables\Filters\SelectFilter::make('atribut')
+                    ->label('Atribut')
                     ->options([
-                        'COST' => 'COST',
                         'BENEFIT' => 'BENEFIT',
-                    ]),
+                        'COST' => 'COST',
+                    ])
+                    ->native(false),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
@@ -218,17 +213,15 @@ class CriteriaResource extends Resource
                     ->icon('heroicon-m-trash')
                     ->requiresConfirmation(),
             ])
-            ->bulkActions([])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ])
             ->defaultSort('kode_kriteria')
-            ->emptyStateHeading(
-                'Belum ada data kriteria'
-            )
-            ->emptyStateDescription(
-                'Tambahkan kriteria yang digunakan dalam proses evaluasi supplier.'
-            )
-            ->emptyStateIcon(
-                'heroicon-o-adjustments-horizontal'
-            );
+            ->emptyStateHeading('Belum ada data kriteria')
+            ->emptyStateDescription('Tambahkan kriteria yang digunakan dalam proses evaluasi supplier.')
+            ->emptyStateIcon('heroicon-o-adjustments-horizontal');
     }
 
     public static function getRelations(): array
@@ -236,33 +229,17 @@ class CriteriaResource extends Resource
         return [];
     }
 
-    /**
-     * Daftarkan widget statistik milik resource.
-     */
     public static function getWidgets(): array
     {
-        return [
-            CriteriaStatsOverview::class,
-        ];
+        return [];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' =>
-                Pages\ListCriterias::route('/'),
-
-            'create' =>
-                Pages\CreateCriteria::route('/create'),
-
-            'edit' =>
-                Pages\EditCriteria::route(
-                    '/{record}/edit'
-                ),
+            'index' => Pages\ListCriterias::route('/'),
+            'create' => Pages\CreateCriteria::route('/create'),
+            'edit' => Pages\EditCriteria::route('/{record}/edit'),
         ];
     }
-    public static function shouldRegisterNavigation(): bool
-{
-    return false;
-}
 }

@@ -20,12 +20,12 @@ class Criteria extends Model
      */
     protected $guarded = [];
 
-    /**
-     * Casting kolom.
-     */
-    protected $casts = [
-        'bobot_default' => 'float',
-    ];
+    protected $casts = [];
+
+    public function scoreGuidelines(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CriterionScoreGuideline::class, 'criterion_id');
+    }
 
     /**
      * Membuat ID kriteria otomatis ketika data disimpan.
