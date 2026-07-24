@@ -26,7 +26,7 @@ class PurchaseHistoryResource extends Resource
         'Data Historis Pembelian';
 
     protected static ?string $navigationGroup =
-    'Proses Evaluasi';
+    'Analisis dan Perhitungan';
 
     protected static ?string $modelLabel =
         'Data Historis Pembelian';
@@ -40,7 +40,7 @@ class PurchaseHistoryResource extends Resource
     protected static ?string $slug =
         'data-historis-pembelian';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
     {
@@ -397,187 +397,84 @@ class PurchaseHistoryResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make(
-                    'tanggal_pembelian'
-                )
+                Tables\Columns\TextColumn::make('tanggal_pembelian')
                     ->label('Tanggal PO')
                     ->date('d M Y')
-                    ->sortable(),
+                    ->sortable()
+                    ->width('100px'),
 
-                Tables\Columns\TextColumn::make(
-                    'nomor_po'
-                )
+                Tables\Columns\TextColumn::make('nomor_po')
                     ->label('Nomor PO')
                     ->placeholder('-')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->wrap(),
 
-                Tables\Columns\TextColumn::make(
-                    'supplier_name'
-                )
+                Tables\Columns\TextColumn::make('supplier_name')
                     ->label('Supplier')
-                    ->description(
-                        fn (
-                            PurchaseHistory $record
-                        ): string =>
-                            $record->jenis_supplier
-                    )
-                    ->icon(
-                        'heroicon-m-building-office-2'
-                    )
+                    ->description(fn (PurchaseHistory $record): string => $record->jenis_supplier ?? '')
+                    ->icon('heroicon-m-building-office-2')
                     ->searchable()
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->lineClamp(2),
 
-                Tables\Columns\TextColumn::make(
-                    'nama_produk'
-                )
+                Tables\Columns\TextColumn::make('nama_produk')
                     ->label('Produk')
-                    ->description(
-                        fn (
-                            PurchaseHistory $record
-                        ): string =>
-                            collect([
-                                $record->kode_produk,
-                                $record->satuan,
-                            ])
-                                ->filter()
-                                ->implode(' • ')
-                    )
+                    ->description(fn (PurchaseHistory $record): string => collect([$record->kode_produk, $record->satuan])->filter()->implode(' • '))
                     ->searchable()
                     ->sortable()
-                    ->limit(45)
-                    ->tooltip(
-                        fn (
-                            PurchaseHistory $record
-                        ): string =>
-                            $record->nama_produk
-                    )
-                    ->wrap(),
+                    ->wrap()
+                    ->lineClamp(3)
+                    ->tooltip(fn (PurchaseHistory $record): string => $record->nama_produk),
 
-                Tables\Columns\TextColumn::make(
-                    'qty_pembelian'
-                )
+                Tables\Columns\TextColumn::make('qty_pembelian')
                     ->label('Qty Pembelian')
-                    ->formatStateUsing(
-                        fn (
-                            $state,
-                            PurchaseHistory $record
-                        ): string =>
-                            self::formatQuantity(
-                                $state
-                            )
-                            . ' '
-                            . $record->satuan
-                    )
+                    ->formatStateUsing(fn ($state, PurchaseHistory $record): string => self::formatQuantity($state) . ' ' . $record->satuan)
                     ->alignEnd()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'harga_satuan'
-                )
+                Tables\Columns\TextColumn::make('harga_satuan')
                     ->label('Harga')
-                    ->formatStateUsing(
-                        fn ($state): string =>
-                            self::formatRupiah(
-                                $state
-                            )
-                    )
-                    ->description(
-                        fn (
-                            PurchaseHistory $record
-                        ): string =>
-                            'Total: '
-                            . self::formatRupiah(
-                                $record->total_pembelian
-                            )
-                    )
+                    ->formatStateUsing(fn ($state): string => self::formatRupiah($state))
+                    ->description(fn (PurchaseHistory $record): string => 'Total: ' . self::formatRupiah($record->total_pembelian))
                     ->alignEnd()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'qty_diterima'
-                )
+                Tables\Columns\TextColumn::make('qty_diterima')
                     ->label('Penerimaan')
-                    ->formatStateUsing(
-                        fn (
-                            $state,
-                            PurchaseHistory $record
-                        ): string =>
-                            self::formatQuantity(
-                                $state
-                            )
-                            . ' '
-                            . $record->satuan
-                    )
-                    ->description(
-                        fn (
-                            PurchaseHistory $record
-                        ): string =>
-                            $record->tanggal_penerimaan
-                                ? $record
-                                    ->tanggal_penerimaan
-                                    ->format('d M Y')
-                                : 'Belum diterima'
-                    )
+                    ->formatStateUsing(fn ($state, PurchaseHistory $record): string => self::formatQuantity($state) . ' ' . $record->satuan)
+                    ->description(fn (PurchaseHistory $record): string => $record->tanggal_penerimaan ? $record->tanggal_penerimaan->format('d M Y') : 'Belum diterima')
                     ->alignEnd()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'fulfillment_rate'
-                )
+                Tables\Columns\TextColumn::make('fulfillment_rate')
                     ->label('Pemenuhan')
-                    ->formatStateUsing(
-                        fn ($state): string =>
-                            number_format(
-                                (float) $state,
-                                2,
-                                ',',
-                                '.'
-                            )
-                            . '%'
-                    )
+                    ->formatStateUsing(fn ($state): string => number_format((float) $state, 2, ',', '.') . '%')
+                    ->badge()
+                    ->color(fn (string $state): string => (float)$state >= 100 ? 'success' : ((float)$state > 0 ? 'warning' : 'gray'))
                     ->alignCenter()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'lead_time_hari'
-                )
+                Tables\Columns\TextColumn::make('lead_time_hari')
                     ->label('Lead Time')
-                    ->formatStateUsing(
-                        fn ($state): string =>
-                            filled($state)
-                                ? $state . ' hari'
-                                : '-'
-                    )
+                    ->formatStateUsing(fn ($state): string => filled($state) ? $state . ' hr' : '-')
                     ->badge()
                     ->color('gray')
+                    ->size('sm')
                     ->alignCenter()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make(
-                    'status_penerimaan'
-                )
+                Tables\Columns\TextColumn::make('status_penerimaan')
                     ->label('Status')
                     ->badge()
-                    ->color(
-                        fn (string $state): string =>
-                            match ($state) {
-                                'Diterima Lengkap' =>
-                                    'success',
-
-                                'Diterima Sebagian' =>
-                                    'warning',
-
-                                'Kelebihan Penerimaan' =>
-                                    'info',
-
-                                'Belum Diterima' =>
-                                    'gray',
-
-                                default => 'gray',
-                            }
-                    )
+                    ->color(fn (string $state): string => match ($state) {
+                        'Diterima Lengkap' => 'success',
+                        'Diterima Sebagian' => 'warning',
+                        'Kelebihan Penerimaan' => 'info',
+                        'Belum Diterima' => 'gray',
+                        default => 'gray',
+                    })
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make(
@@ -828,6 +725,13 @@ class PurchaseHistoryResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    public static function getWidgets(): array
+    {
+        return [
+            \App\Filament\Resources\PurchaseHistoryResource\Widgets\PurchaseHistoryStatsOverview::class,
+        ];
     }
 
     public static function getPages(): array

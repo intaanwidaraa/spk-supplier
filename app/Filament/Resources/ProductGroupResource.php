@@ -107,7 +107,8 @@ class ProductGroupResource extends Resource
                     ->label('Nama Kelompok Produk')
                     ->searchable()
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->width('30%'),
 
                 Tables\Columns\TextColumn::make('kategori_produk')
                     ->label('Kategori')
@@ -128,10 +129,11 @@ class ProductGroupResource extends Resource
                     ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('satuan_default')
-                    ->label('Satuan Default')
+                    ->label('Satuan')
                     ->badge()
                     ->color('gray')
-                    ->placeholder('-'),
+                    ->placeholder('-')
+                    ->width('100px'),
 
                 Tables\Columns\IconColumn::make('status')
                     ->label('Status')
@@ -139,7 +141,8 @@ class ProductGroupResource extends Resource
                     ->trueIcon('heroicon-o-check-circle')
                     ->falseIcon('heroicon-o-x-circle')
                     ->trueColor('success')
-                    ->falseColor('danger'),
+                    ->falseColor('danger')
+                    ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Tanggal Dibuat')
@@ -200,6 +203,13 @@ class ProductGroupResource extends Resource
     {
         return [
             RelationManagers\ProductsRelationManager::class,
+        ];
+    }
+
+    public static function getWidgets(): array
+    {
+        return [
+            \App\Filament\Resources\ProductGroupResource\Widgets\ProductGroupStatsOverview::class,
         ];
     }
 

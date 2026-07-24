@@ -70,94 +70,9 @@ class SupplierPerformanceCalculationService
     public function calculateAndSyncAll(): void
     {
         $evaluationPeriod = $this->getOrCreateDefaultEvaluationPeriod();
-        
-        $suppliers = Supplier::all();
-
-        if ($suppliers->isEmpty()) return;
-
-        $criteriaList = Criteria::all()->keyBy('kode_kriteria');
-
-        $allPurchaseHistories = PurchaseHistory::whereIn('supplier_id', $suppliers->pluck('id'))->get();
-        
-        $productPriceGroups = $allPurchaseHistories->groupBy(function ($item) {
-            return $item->nama_produk . '|' . $item->satuan;
-        });
-        
-        $medianPrices = [];
-        foreach ($productPriceGroups as $key => $histories) {
-            $prices = [];
-            $supplierGroups = $histories->groupBy('supplier_id');
-            foreach ($supplierGroups as $sId => $sHistories) {
-                $sumQty = $sHistories->sum('qty_pembelian');
-                $sumTotal = $sHistories->sum('total_pembelian');
-                if ($sumQty > 0) {
-                    $prices[] = $sumTotal / $sumQty;
-                }
-            }
-            if (count($prices) > 0) {
-                sort($prices);
-                $count = count($prices);
-                $mid = floor(($count - 1) / 2);
-                $medianPrices[$key] = ($prices[$mid] + $prices[$mid + 1 - $count % 2]) / 2;
-            }
-        }
-
-        foreach ($suppliers as $supplier) {
-            $supplierHistories = $allPurchaseHistories->where('supplier_id', $supplier->id);
-            
-            $c1 = $this->calculateC1($supplierHistories, $criteriaList->get('C1'));
-            $c2 = $this->calculateC2($supplierHistories, $medianPrices, $criteriaList->get('C2'));
-            $c3 = $this->calculateC3($supplier, $criteriaList->get('C3'));
-            $c4 = $this->calculateC4($supplierHistories, $criteriaList->get('C4'));
-            $c5 = $this->calculateC5($supplierHistories, $criteriaList->get('C5'));
-
-            $totalScore = 0;
-            if ($c1) $totalScore += $c1['auto_score'];
-            if ($c2) $totalScore += $c2['auto_score'];
-            if ($c3) $totalScore += $c3['auto_score'];
-            if ($c4) $totalScore += $c4['auto_score'];
-            if ($c5) $totalScore += $c5['auto_score'];
-
-            $existingAssessment = SupplierPerformanceAssessment::where([
-                'evaluation_period_id' => $evaluationPeriod->id,
-                'supplier_id' => $supplier->id,
-            ])->first();
-
-            if ($existingAssessment && $existingAssessment->status === 'Final') {
-                continue;
-            }
-
-            $assessment = SupplierPerformanceAssessment::updateOrCreate(
-                [
-                    'evaluation_period_id' => $evaluationPeriod->id,
-                    'supplier_id' => $supplier->id,
-                    // Remove product filter bindings so it's a general assessment
-                    'product_group_id' => null,
-                    'product_id' => null,
-                ],
-                [
-                    'product_category' => $supplier->kategori,
-                    'assessment_date' => Carbon::today(),
-                    'c1_score' => $c1 ? $c1['auto_score'] : null,
-                    'c2_score' => $c2 ? $c2['auto_score'] : null,
-                    'c3_score' => $c3 ? $c3['auto_score'] : null,
-                    'c4_score' => $c4 ? $c4['auto_score'] : null,
-                    'c5_score' => $c5 ? $c5['auto_score'] : null,
-                    'total_score' => $totalScore,
-                    'status' => 'Otomatis',
-                    'is_auto_calculated' => true,
-                    'calculated_at' => now(),
-                    'notes' => 'Penilaian dihitung otomatis berdasarkan data historis pembelian dan data supplier.',
-                ]
-            );
-
-            $this->saveScoreDetail($assessment, $criteriaList->get('C1'), $c1);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C2'), $c2);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C3'), $c3);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C4'), $c4);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C5'), $c5);
-        }
+        $this->performCalculation($evaluationPeriod, null, null, null);
     }
+
     public function calculateAndSyncForTable(
         ?int $evaluationPeriodId = null,
         ?string $kategoriSupplier = null,
@@ -175,25 +90,28 @@ class SupplierPerformanceCalculationService
         }
 
         if (!$evaluationPeriod) {
-            $evaluationPeriod = EvaluationPeriod::query()
-                ->where('status', 'Aktif')
-                ->latest()
-                ->first()
-                ?? EvaluationPeriod::query()->latest()->first();
+            $evaluationPeriod = $this->getOrCreateDefaultEvaluationPeriod();
         }
 
-        if (!$evaluationPeriod) {
-            throw new \Exception('Periode evaluasi belum tersedia. Buat periode evaluasi terlebih dahulu.');
-        }
+        $this->performCalculation($evaluationPeriod, $kategoriSupplier, $productGroupId, $productId);
+    }
 
-        $productGroup = $productGroupId ? ProductGroup::find($productGroupId) : null;
-        $product = $productId ? Product::find($productId) : null;
+    public function calculate(int $evaluationPeriodId, int $productGroupId, ?int $productId = null)
+    {
+        $evaluationPeriod = EvaluationPeriod::findOrFail($evaluationPeriodId);
+        $this->performCalculation($evaluationPeriod, null, $productGroupId, $productId);
+    }
 
+    private function performCalculation(EvaluationPeriod $evaluationPeriod, ?string $kategoriSupplier, ?int $productGroupId, ?int $productId)
+    {
         $suppliersQuery = Supplier::query();
 
         if ($kategoriSupplier && $kategoriSupplier !== 'Semua') {
             $suppliersQuery->where('kategori', $kategoriSupplier);
         }
+
+        $productGroup = $productGroupId ? ProductGroup::find($productGroupId) : null;
+        $product = $productId ? Product::find($productId) : null;
 
         $targetProductNames = [];
         $targetProductCodes = [];
@@ -202,7 +120,7 @@ class SupplierPerformanceCalculationService
             $targetProductNames[] = $product->nama_produk;
             $targetProductCodes[] = $product->kode_produk;
             
-            $supplierIds = DB::table('supplier_products')->where('product_id', $productId)->pluck('supplier_id')->toArray();
+            $supplierIds = DB::table('product_supplier')->where('product_id', $productId)->pluck('supplier_id')->toArray();
             if (!empty($supplierIds)) {
                 $suppliersQuery->whereIn('id', $supplierIds);
             }
@@ -211,7 +129,7 @@ class SupplierPerformanceCalculationService
             $targetProductNames = $products->pluck('nama_produk')->filter()->toArray();
             $targetProductCodes = $products->pluck('kode_produk')->filter()->toArray();
 
-            $supplierIds = DB::table('supplier_products')->whereIn('product_id', $products->pluck('id'))->pluck('supplier_id')->toArray();
+            $supplierIds = DB::table('product_supplier')->whereIn('product_id', $products->pluck('id'))->pluck('supplier_id')->toArray();
             if (!empty($supplierIds)) {
                 $suppliersQuery->whereIn('id', $supplierIds);
             }
@@ -220,12 +138,14 @@ class SupplierPerformanceCalculationService
         $suppliers = $suppliersQuery->get();
 
         if ($suppliers->isEmpty()) {
-            throw new \Exception('Tidak ada supplier yang sesuai dengan filter yang diberikan.');
+            return;
         }
 
         $criteriaList = Criteria::all()->keyBy('kode_kriteria');
+        $validSupplierIds = $suppliers->pluck('id')->toArray();
 
-        $purchaseHistoriesQuery = PurchaseHistory::whereIn('supplier_id', $suppliers->pluck('id'))
+        // 1. Get all histories for these suppliers in the given year
+        $purchaseHistoriesQuery = PurchaseHistory::whereIn('supplier_id', $validSupplierIds)
             ->whereYear('tanggal_pembelian', $evaluationPeriod->year);
         
         if (!empty($targetProductNames) || !empty($targetProductCodes)) {
@@ -241,8 +161,15 @@ class SupplierPerformanceCalculationService
             
         $allPurchaseHistories = $purchaseHistoriesQuery->get();
 
-        $productPriceGroups = $allPurchaseHistories->groupBy(function ($item) {
-            return $item->nama_produk . '|' . $item->satuan;
+        // Prepare Median Prices for C2
+        // Filter out zero prices and zero qty
+        $validPricesHistories = $allPurchaseHistories->filter(function($h) {
+            return $h->qty_pembelian > 0 && $h->harga_satuan > 0;
+        });
+
+        $productPriceGroups = $validPricesHistories->groupBy(function ($item) {
+            $identity = $item->kode_produk ?: $item->nama_produk;
+            return trim(strtoupper($identity)) . '|' . trim(strtoupper($item->satuan));
         });
         
         $medianPrices = [];
@@ -251,7 +178,9 @@ class SupplierPerformanceCalculationService
             $supplierGroups = $histories->groupBy('supplier_id');
             foreach ($supplierGroups as $sId => $sHistories) {
                 $sumQty = $sHistories->sum('qty_pembelian');
-                $sumTotal = $sHistories->sum('total_pembelian');
+                $sumTotal = $sHistories->sum(function($h) {
+                    return $h->qty_pembelian * $h->harga_satuan;
+                });
                 if ($sumQty > 0) {
                     $prices[] = $sumTotal / $sumQty;
                 }
@@ -264,209 +193,69 @@ class SupplierPerformanceCalculationService
             }
         }
 
-        foreach ($suppliers as $supplier) {
-            $supplierHistories = $allPurchaseHistories->where('supplier_id', $supplier->id);
-            
-            $c1 = $this->calculateC1($supplierHistories, $criteriaList->get('C1'));
-            $c2 = $this->calculateC2($supplierHistories, $medianPrices, $criteriaList->get('C2'));
-            $c3 = $this->calculateC3($supplier, $criteriaList->get('C3'));
-            $c4 = $this->calculateC4($supplierHistories, $criteriaList->get('C4'));
-            $c5 = $this->calculateC5($supplierHistories, $criteriaList->get('C5'));
+        DB::beginTransaction();
+        try {
+            foreach ($suppliers as $supplier) {
+                $supplierHistories = $allPurchaseHistories->where('supplier_id', $supplier->id);
+                
+                $c1 = $this->calculateC1($supplierHistories, $criteriaList->get('C1'));
+                $c2 = $this->calculateC2($supplierHistories, $medianPrices, $criteriaList->get('C2'));
+                $c3 = $this->calculateC3($supplier, $criteriaList->get('C3'));
+                $c4 = $this->calculateC4($supplierHistories, $criteriaList->get('C4'));
+                $c5 = $this->calculateC5($supplierHistories, $criteriaList->get('C5'));
 
-            $totalScore = 0;
-            if ($c1) $totalScore += $c1['auto_score'];
-            if ($c2) $totalScore += $c2['auto_score'];
-            if ($c3) $totalScore += $c3['auto_score'];
-            if ($c4) $totalScore += $c4['auto_score'];
-            if ($c5) $totalScore += $c5['auto_score'];
+                // Ensure all 5 criteria are present
+                if (!$c1 || !$c2 || !$c3 || !$c4 || !$c5) {
+                    \Log::warning("Perhitungan gagal untuk supplier {$supplier->nama_supplier}: Data tidak lengkap untuk C1-C5.");
+                    continue;
+                }
 
-            $existingAssessment = SupplierPerformanceAssessment::where([
-                'evaluation_period_id' => $evaluationPeriod->id,
-                'supplier_id' => $supplier->id,
-                'product_group_id' => $productGroupId,
-                'product_id' => $productId,
-            ])->first();
+                $totalScore = ($c1['auto_score'] + $c2['auto_score'] + $c3['auto_score'] + $c4['auto_score'] + $c5['auto_score']) / 5;
 
-            if ($existingAssessment && $existingAssessment->status === 'Final') {
-                continue;
-            }
-
-            $assessment = SupplierPerformanceAssessment::updateOrCreate(
-                [
+                $existingAssessment = SupplierPerformanceAssessment::where([
                     'evaluation_period_id' => $evaluationPeriod->id,
                     'supplier_id' => $supplier->id,
                     'product_group_id' => $productGroupId,
                     'product_id' => $productId,
-                ],
-                [
-                    'product_category' => $supplier->kategori ?? $kategoriSupplier,
-                    'assessment_date' => Carbon::today(),
-                    'c1_score' => $c1 ? $c1['auto_score'] : null,
-                    'c2_score' => $c2 ? $c2['auto_score'] : null,
-                    'c3_score' => $c3 ? $c3['auto_score'] : null,
-                    'c4_score' => $c4 ? $c4['auto_score'] : null,
-                    'c5_score' => $c5 ? $c5['auto_score'] : null,
-                    'total_score' => $totalScore,
-                    'status' => 'Otomatis',
-                    'is_auto_calculated' => true,
-                    'calculated_at' => now(),
-                    'notes' => 'Penilaian dihitung otomatis berdasarkan data historis pembelian dan data supplier.',
-                ]
-            );
+                ])->first();
 
-            $this->saveScoreDetail($assessment, $criteriaList->get('C1'), $c1);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C2'), $c2);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C3'), $c3);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C4'), $c4);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C5'), $c5);
-        }
-    }
-
-    public function calculate(int $evaluationPeriodId, int $productGroupId, ?int $productId = null)
-    {
-        $evaluationPeriod = EvaluationPeriod::findOrFail($evaluationPeriodId);
-        $productGroup = ProductGroup::findOrFail($productGroupId);
-        
-        $products = [];
-        if ($productId) {
-            $product = Product::findOrFail($productId);
-            $products[] = $product;
-        } else {
-            $products = $productGroup->products;
-        }
-
-        if (count($products) === 0) {
-            return;
-        }
-
-        $productIds = collect($products)->pluck('id')->toArray();
-        $productCodes = collect($products)->pluck('kode_produk')->filter()->toArray();
-        $productNames = collect($products)->pluck('nama_produk')->filter()->toArray();
-
-        // 1. Get Target Suppliers
-        // First, check from pivot supplier_products
-        $supplierIds = DB::table('supplier_products')
-            ->whereIn('product_id', $productIds)
-            ->pluck('supplier_id')
-            ->unique()
-            ->toArray();
-
-        // Fallback: Check purchase histories if pivot is incomplete
-        if (empty($supplierIds) && count($productNames) > 0) {
-            $historySuppliers = PurchaseHistory::query()
-                ->where(function ($q) use ($productNames, $productCodes) {
-                    if (count($productNames) > 0) {
-                        $q->whereIn('nama_produk', $productNames);
-                    }
-                    if (count($productCodes) > 0) {
-                        $q->orWhereIn('kode_produk', $productCodes);
-                    }
-                })
-                ->pluck('supplier_name')
-                ->unique()
-                ->toArray();
-
-            if (!empty($historySuppliers)) {
-                $supplierIds = Supplier::whereIn('nama_supplier', $historySuppliers)
-                    ->pluck('id')
-                    ->toArray();
-            }
-        }
-
-        if (empty($supplierIds)) {
-            return; // No suppliers found to evaluate
-        }
-
-        $suppliers = Supplier::whereIn('id', $supplierIds)->get();
-        $criteriaList = Criteria::all()->keyBy('kode_kriteria');
-
-        // Prepare Comparison Data (for C2 - Price)
-        // Find the median price for each product+satuan in the evaluation period year
-        $purchaseHistoriesQuery = PurchaseHistory::whereIn('supplier_id', $supplierIds)
-            ->where(function ($q) use ($productNames, $productCodes) {
-                if (count($productNames) > 0) {
-                    $q->whereIn('nama_produk', $productNames);
+                if ($existingAssessment && $existingAssessment->status === 'Final') {
+                    continue;
                 }
-                if (count($productCodes) > 0) {
-                    $q->orWhereIn('kode_produk', $productCodes);
-                }
-            })
-            ->whereYear('tanggal_pembelian', $evaluationPeriod->year);
-            
-        $allPurchaseHistories = $purchaseHistoriesQuery->get();
 
-        // Median calculation logic for C2 pembanding
-        $productPriceGroups = $allPurchaseHistories->groupBy(function ($item) {
-            return $item->nama_produk . '|' . $item->satuan;
-        });
-        
-        $medianPrices = [];
-        foreach ($productPriceGroups as $key => $histories) {
-            $prices = [];
-            $supplierGroups = $histories->groupBy('supplier_id');
-            foreach ($supplierGroups as $sId => $sHistories) {
-                $sumQty = $sHistories->sum('qty_pembelian');
-                $sumTotal = $sHistories->sum('total_pembelian'); // total_pembelian or qty*harga_satuan
-                if ($sumQty > 0) {
-                    $prices[] = $sumTotal / $sumQty;
-                }
+                $assessment = SupplierPerformanceAssessment::updateOrCreate(
+                    [
+                        'evaluation_period_id' => $evaluationPeriod->id,
+                        'supplier_id' => $supplier->id,
+                        'product_group_id' => $productGroupId,
+                        'product_id' => $productId,
+                    ],
+                    [
+                        'product_category' => $supplier->kategori ?? $kategoriSupplier,
+                        'assessment_date' => Carbon::today(),
+                        'c1_score' => $c1['auto_score'],
+                        'c2_score' => $c2['auto_score'],
+                        'c3_score' => $c3['auto_score'],
+                        'c4_score' => $c4['auto_score'],
+                        'c5_score' => $c5['auto_score'],
+                        'total_score' => $totalScore,
+                        'status' => 'Otomatis',
+                        'is_auto_calculated' => true,
+                        'calculated_at' => now(),
+                        'notes' => 'Penilaian dihitung otomatis berdasarkan data historis pembelian dan data supplier.',
+                    ]
+                );
+
+                $this->saveScoreDetail($assessment, $criteriaList->get('C1'), $c1);
+                $this->saveScoreDetail($assessment, $criteriaList->get('C2'), $c2);
+                $this->saveScoreDetail($assessment, $criteriaList->get('C3'), $c3);
+                $this->saveScoreDetail($assessment, $criteriaList->get('C4'), $c4);
+                $this->saveScoreDetail($assessment, $criteriaList->get('C5'), $c5);
             }
-            if (count($prices) > 0) {
-                sort($prices);
-                $count = count($prices);
-                $mid = floor(($count - 1) / 2);
-                $medianPrices[$key] = ($prices[$mid] + $prices[$mid + 1 - $count % 2]) / 2;
-            }
-        }
-
-        foreach ($suppliers as $supplier) {
-            $supplierHistories = $allPurchaseHistories->where('supplier_id', $supplier->id);
-            
-            // Calculate Scores
-            $c1 = $this->calculateC1($supplierHistories, $criteriaList->get('C1'));
-            $c2 = $this->calculateC2($supplierHistories, $medianPrices, $criteriaList->get('C2'));
-            $c3 = $this->calculateC3($supplier, $criteriaList->get('C3'));
-            $c4 = $this->calculateC4($supplierHistories, $criteriaList->get('C4'));
-            $c5 = $this->calculateC5($supplierHistories, $criteriaList->get('C5'));
-
-            // Calculate total score
-            $totalScore = 0;
-            if ($c1) $totalScore += $c1['auto_score'];
-            if ($c2) $totalScore += $c2['auto_score'];
-            if ($c3) $totalScore += $c3['auto_score'];
-            if ($c4) $totalScore += $c4['auto_score'];
-            if ($c5) $totalScore += $c5['auto_score'];
-
-            // Update or Create Assessment
-            $assessment = SupplierPerformanceAssessment::updateOrCreate(
-                [
-                    'evaluation_period_id' => $evaluationPeriod->id,
-                    'supplier_id' => $supplier->id,
-                    'product_group_id' => $productGroup->id,
-                    'product_id' => $productId, // null if grouped
-                ],
-                [
-                    'product_category' => $productGroup->kategori_produk,
-                    'assessment_date' => Carbon::today(),
-                    'c1_score' => $c1 ? $c1['auto_score'] : null,
-                    'c2_score' => $c2 ? $c2['auto_score'] : null,
-                    'c3_score' => $c3 ? $c3['auto_score'] : null,
-                    'c4_score' => $c4 ? $c4['auto_score'] : null,
-                    'c5_score' => $c5 ? $c5['auto_score'] : null,
-                    'total_score' => $totalScore,
-                    'status' => 'Dihitung Otomatis',
-                    'is_auto_calculated' => true,
-                    'calculated_at' => now(),
-                    'notes' => 'Penilaian dihitung otomatis berdasarkan data historis pembelian dan data supplier.',
-                ]
-            );
-
-            // Save Details
-            $this->saveScoreDetail($assessment, $criteriaList->get('C1'), $c1);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C2'), $c2);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C3'), $c3);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C4'), $c4);
-            $this->saveScoreDetail($assessment, $criteriaList->get('C5'), $c5);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
         }
     }
 
@@ -474,8 +263,15 @@ class SupplierPerformanceCalculationService
     {
         if (!$criterion || $histories->isEmpty()) return null;
         
-        $productGroups = $histories->groupBy(function ($item) {
-            return $item->nama_produk . '|' . $item->satuan;
+        $validHistories = $histories->filter(function($h) {
+            return $h->qty_pembelian > 0;
+        });
+
+        if ($validHistories->isEmpty()) return null;
+
+        $productGroups = $validHistories->groupBy(function ($item) {
+            $identity = $item->kode_produk ?: $item->nama_produk;
+            return trim(strtoupper($identity)) . '|' . trim(strtoupper($item->satuan));
         });
 
         $totalProductCombinations = $productGroups->count();
@@ -490,19 +286,21 @@ class SupplierPerformanceCalculationService
 
         if ($totalProductCombinations == 0) return null;
 
-        $repeatRate = $repeatProductCount / $totalProductCombinations;
+        $repeatRate = ($repeatProductCount / $totalProductCombinations) * 100;
         
         $score = 1;
-        if ($repeatRate >= 0.80) $score = 5;
-        elseif ($repeatRate >= 0.60) $score = 4;
-        elseif ($repeatRate >= 0.40) $score = 3;
-        elseif ($repeatRate >= 0.20) $score = 2;
+        if ($repeatRate > 80) $score = 5;
+        elseif ($repeatRate > 60 && $repeatRate <= 80) $score = 4;
+        elseif ($repeatRate > 40 && $repeatRate <= 60) $score = 3;
+        elseif ($repeatRate > 20 && $repeatRate <= 40) $score = 2;
+        elseif ($repeatRate <= 20) $score = 1;
 
+        $formattedRate = number_format($repeatRate, 2, ',', '.');
         return [
             'raw_value' => $repeatRate,
-            'raw_value_label' => "{$repeatProductCount} dari {$totalProductCombinations} jenis produk pernah dipesan ulang",
+            'raw_value_label' => "{$repeatProductCount} dari {$totalProductCombinations} jenis produk pernah dipesan ulang (RPR {$formattedRate}%)",
             'auto_score' => $score,
-            'calculation_description' => "C1 menggunakan proxy konsistensi pembelian ulang karena data QC/reject belum tersedia.",
+            'calculation_description' => "C1 menggunakan proxy konsistensi pembelian ulang: kombinasi produk dengan >=2 PO dibagi total kombinasi produk.",
         ];
     }
 
@@ -510,51 +308,61 @@ class SupplierPerformanceCalculationService
     {
         if (!$criterion || $histories->isEmpty()) return null;
 
-        $productGroups = $histories->groupBy(function ($item) {
-            return $item->nama_produk . '|' . $item->satuan;
+        $validHistories = $histories->filter(function($h) {
+            return $h->qty_pembelian > 0 && $h->harga_satuan > 0;
+        });
+
+        if ($validHistories->isEmpty()) return null;
+
+        $productGroups = $validHistories->groupBy(function ($item) {
+            $identity = $item->kode_produk ?: $item->nama_produk;
+            return trim(strtoupper($identity)) . '|' . trim(strtoupper($item->satuan));
         });
 
         $priceIndices = [];
-        $totalWeight = 0;
+        $singleSourceCount = 0;
 
         foreach ($productGroups as $key => $items) {
             $sumQty = $items->sum('qty_pembelian');
-            $sumTotal = $items->sum('total_pembelian');
+            $sumTotal = $items->sum(function($h) {
+                return $h->qty_pembelian * $h->harga_satuan;
+            });
             
-            if ($sumQty > 0 && isset($medianPrices[$key]) && $medianPrices[$key] > 0) {
+            if ($sumQty > 0) {
                 $weightedPrice = $sumTotal / $sumQty;
-                $index = $weightedPrice / $medianPrices[$key];
                 
-                // Weight by qty or just simple average of indices?
-                // The prompt says: "Indeks harga: price_index = harga_rata_rata_tertimbang_supplier / median_harga_pembanding"
-                // If supplier has multiple products, we can average the indices
-                $priceIndices[] = $index;
+                if (isset($medianPrices[$key]) && $medianPrices[$key] > 0) {
+                    $index = $weightedPrice / $medianPrices[$key];
+                    $priceIndices[] = $index;
+                } else {
+                    // Single source or no median available
+                    $singleSourceCount++;
+                    $priceIndices[] = 1.0; // Assume market price if no comparison available based on common logic, or 1.0
+                }
             }
         }
 
         if (count($priceIndices) === 0) {
-            return [
-                'raw_value' => null,
-                'raw_value_label' => "Data tidak cukup",
-                'auto_score' => null,
-                'calculation_description' => "Data harga pembanding tidak cukup.",
-            ];
+            return null;
         }
 
         $overallPriceIndex = array_sum($priceIndices) / count($priceIndices);
 
         $score = 1;
         if ($overallPriceIndex <= 0.90) $score = 5;
-        elseif ($overallPriceIndex <= 1.00) $score = 4;
-        elseif ($overallPriceIndex <= 1.10) $score = 3;
-        elseif ($overallPriceIndex <= 1.20) $score = 2;
+        elseif ($overallPriceIndex > 0.90 && $overallPriceIndex <= 1.00) $score = 4;
+        elseif ($overallPriceIndex > 1.00 && $overallPriceIndex <= 1.10) $score = 3;
+        elseif ($overallPriceIndex > 1.10 && $overallPriceIndex <= 1.20) $score = 2;
+        elseif ($overallPriceIndex > 1.20) $score = 1;
 
         $formattedIndex = number_format($overallPriceIndex, 2, ',', '.');
+        $desc = "Indeks harga dihitung rata-rata rasio harga tertimbang supplier terhadap median. Dibandingkan: " . count($priceIndices) . " produk. Single source: {$singleSourceCount}.";
+
         return [
             'raw_value' => $overallPriceIndex,
             'raw_value_label' => "Indeks gabungan {$formattedIndex}",
             'auto_score' => $score,
-            'calculation_description' => "Indeks harga dihitung dari rasio harga tertimbang supplier terhadap median harga pembanding.",
+            'calculation_description' => $desc,
         ];
     }
 
@@ -566,15 +374,16 @@ class SupplierPerformanceCalculationService
         
         $score = 1;
         if ($duration >= 9) $score = 5;
-        elseif ($duration >= 7) $score = 4;
-        elseif ($duration >= 5) $score = 3;
-        elseif ($duration >= 3) $score = 2;
+        elseif ($duration >= 7 && $duration < 9) $score = 4;
+        elseif ($duration >= 5 && $duration < 7) $score = 3;
+        elseif ($duration >= 3 && $duration < 5) $score = 2;
+        elseif ($duration < 3) $score = 1;
 
         return [
             'raw_value' => $duration,
             'raw_value_label' => "{$duration} tahun masa kerja sama",
             'auto_score' => $score,
-            'calculation_description' => "Dinilai berdasarkan masa kerja sama yang tercatat di master data supplier.",
+            'calculation_description' => "Dinilai berdasarkan durasi di master supplier (batas eksklusif antar interval).",
         ];
     }
 
@@ -585,22 +394,16 @@ class SupplierPerformanceCalculationService
         $sumPembelian = $histories->sum('qty_pembelian');
         $sumDiterima = $histories->sum('qty_diterima');
 
-        if ($sumPembelian <= 0) {
-            return [
-                'raw_value' => null,
-                'raw_value_label' => "Data kuantitas tidak cukup",
-                'auto_score' => null,
-                'calculation_description' => "Data kuantitas pembelian tidak cukup.",
-            ];
-        }
+        if ($sumPembelian <= 0) return null;
 
         $fulfillmentRate = ($sumDiterima / $sumPembelian) * 100;
         
         $score = 1;
         if ($fulfillmentRate >= 99) $score = 5;
-        elseif ($fulfillmentRate >= 95) $score = 4;
-        elseif ($fulfillmentRate >= 90) $score = 3;
-        elseif ($fulfillmentRate >= 80) $score = 2;
+        elseif ($fulfillmentRate >= 95 && $fulfillmentRate < 99) $score = 4;
+        elseif ($fulfillmentRate >= 90 && $fulfillmentRate < 95) $score = 3;
+        elseif ($fulfillmentRate >= 80 && $fulfillmentRate < 90) $score = 2;
+        elseif ($fulfillmentRate < 80) $score = 1;
 
         $formattedRate = number_format($fulfillmentRate, 2, ',', '.');
         $formattedDiterima = number_format($sumDiterima, 0, ',', '.');
@@ -608,9 +411,9 @@ class SupplierPerformanceCalculationService
 
         return [
             'raw_value' => $fulfillmentRate,
-            'raw_value_label' => "Qty diterima {$formattedDiterima} dari qty pembelian {$formattedPembelian}, fulfillment rate {$formattedRate}%",
+            'raw_value_label' => "Qty diterima {$formattedDiterima} dari {$formattedPembelian} (FR {$formattedRate}%)",
             'auto_score' => $score,
-            'calculation_description' => "Persentase qty diterima dibandingkan dengan qty pembelian.",
+            'calculation_description' => "FR dihitung dari SUM(diterima)/SUM(pembelian) x 100% pada periode berjalan.",
         ];
     }
 
@@ -621,36 +424,31 @@ class SupplierPerformanceCalculationService
         $leadTimes = [];
 
         foreach ($histories as $history) {
-            if ($history->lead_time_hari !== null) {
-                if ($history->lead_time_hari >= 0) {
-                    $leadTimes[] = $history->lead_time_hari;
+            $lt = $history->lead_time_hari;
+            
+            if ($lt === null) {
+                if ($history->tanggal_penerimaan && $history->tanggal_pembelian) {
+                    $tglTerima = Carbon::parse($history->tanggal_penerimaan);
+                    $tglBeli = Carbon::parse($history->tanggal_pembelian);
+                    $lt = $tglBeli->diffInDays($tglTerima, false);
                 }
-            } elseif ($history->tanggal_penerimaan && $history->tanggal_pembelian) {
-                $tglTerima = Carbon::parse($history->tanggal_penerimaan);
-                $tglBeli = Carbon::parse($history->tanggal_pembelian);
-                $diff = $tglBeli->diffInDays($tglTerima, false);
-                if ($diff >= 0) {
-                    $leadTimes[] = $diff;
-                }
+            }
+            
+            if ($lt !== null && $lt >= 0) {
+                $leadTimes[] = $lt;
             }
         }
 
-        if (count($leadTimes) === 0) {
-            return [
-                'raw_value' => null,
-                'raw_value_label' => "Data tidak cukup",
-                'auto_score' => null,
-                'calculation_description' => "Data lead time tidak cukup.",
-            ];
-        }
+        if (count($leadTimes) === 0) return null;
 
         $avgLeadTime = array_sum($leadTimes) / count($leadTimes);
 
         $score = 1;
         if ($avgLeadTime <= 8.8) $score = 5;
-        elseif ($avgLeadTime <= 10.6) $score = 4;
-        elseif ($avgLeadTime <= 12.0) $score = 3;
-        elseif ($avgLeadTime <= 16.1) $score = 2;
+        elseif ($avgLeadTime > 8.8 && $avgLeadTime <= 10.6) $score = 4;
+        elseif ($avgLeadTime > 10.6 && $avgLeadTime <= 12.0) $score = 3;
+        elseif ($avgLeadTime > 12.0 && $avgLeadTime <= 16.1) $score = 2;
+        elseif ($avgLeadTime > 16.1) $score = 1;
 
         $formattedLeadTime = number_format($avgLeadTime, 2, ',', '.');
 
@@ -658,7 +456,7 @@ class SupplierPerformanceCalculationService
             'raw_value' => $avgLeadTime,
             'raw_value_label' => "Rata-rata lead time {$formattedLeadTime} hari",
             'auto_score' => $score,
-            'calculation_description' => "Rata-rata lead time pengiriman berdasarkan tanggal PO hingga penerimaan.",
+            'calculation_description' => "Menggunakan rata-rata lead time dari " . count($leadTimes) . " transaksi valid (>= 0 hari).",
         ];
     }
 
@@ -666,13 +464,11 @@ class SupplierPerformanceCalculationService
     {
         if (!$criterion) return;
 
-        // Check for existing manual override
         $existingDetail = SupplierPerformanceScoreDetail::where('supplier_performance_assessment_id', $assessment->id)
             ->where('criterion_id', $criterion->id)
             ->first();
 
         if ($existingDetail && $existingDetail->is_manual_override) {
-            // Keep manual override but update auto score context
             $existingDetail->auto_score = $result ? $result['auto_score'] : null;
             $existingDetail->raw_value = $result ? $result['raw_value'] : null;
             $existingDetail->raw_value_label = $result ? $result['raw_value_label'] : null;
@@ -681,7 +477,6 @@ class SupplierPerformanceCalculationService
             return;
         }
 
-        // Determine category from guidelines based on score
         $category = null;
         if ($result && $result['auto_score']) {
             $guideline = $criterion->scoreGuidelines->where('score', $result['auto_score'])->first();
@@ -694,7 +489,7 @@ class SupplierPerformanceCalculationService
                 'criterion_id' => $criterion->id,
             ],
             [
-                'raw_value' => $result ? (string)$result['raw_value'] : null, // keep as string due to schema? actually it's a string column
+                'raw_value' => $result ? (string)$result['raw_value'] : null,
                 'raw_value_label' => $result ? $result['raw_value_label'] : null,
                 'auto_score' => $result ? $result['auto_score'] : null,
                 'final_score' => $result ? $result['auto_score'] : null,

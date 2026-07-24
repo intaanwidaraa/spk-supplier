@@ -7,6 +7,7 @@ use App\Filament\Resources\SupplierResource\Widgets\SupplierStatsOverview;
 use App\Models\Product;
 use App\Models\ProductGroup;
 use App\Models\Supplier;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -161,6 +162,16 @@ class SupplierResource extends Resource
                 ->description('Masukkan lama kerja sama dan informasi kontak supplier.')
                 ->icon('heroicon-o-clock')
                 ->schema([
+                    Forms\Components\Select::make('status_kerja_sama')
+                        ->label('Status Kerja Sama')
+                        ->options([
+                            'Aktif'    => 'Aktif',
+                            'Nonaktif' => 'Nonaktif',
+                        ])
+                        ->default('Aktif')
+                        ->native(false)
+                        ->required(),
+
                     Forms\Components\TextInput::make('masa_kerja_sama')
                         ->label('Masa Kerja Sama')
                         ->integer()
@@ -168,8 +179,23 @@ class SupplierResource extends Resource
                         ->maxValue(100)
                         ->suffix('Tahun')
                         ->placeholder('Contoh: 5')
-                        ->helperText('Isi jumlah tahun kerja sama dengan supplier.')
+                        ->helperText('Isi jumlah tahun kerja sama dengan supplier. Akan menjadi fallback jika tanggal awal kerja sama tidak diisi.')
                         ->required(),
+
+                    Forms\Components\DatePicker::make('tanggal_awal_kerja_sama')
+                        ->label('Tanggal Awal Kerja Sama')
+                        ->native(false)
+                        ->displayFormat('d M Y')
+                        ->helperText('Opsional. Jika diisi, durasi kerja sama akan dihitung otomatis.'),
+
+                    Forms\Components\Select::make('partnership_category')
+                        ->label('Kategori Kemitraan')
+                        ->options([
+                            'Strategic'     => 'Strategic',
+                            'Transactional' => 'Transactional',
+                        ])
+                        ->native(false)
+                        ->helperText('Opsional. Mempengaruhi perhitungan skor C3.'),
 
                     Forms\Components\TextInput::make('kontak')
                         ->label('Kontak Supplier')
@@ -218,24 +244,35 @@ class SupplierResource extends Resource
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('product_group_names')
+                Tables\Columns\TextColumn::make('kelompok_produk')
                     ->label('Kelompok Produk')
-                    ->getStateUsing(function (Supplier $record) {
-                        return $record->products->pluck('productGroup.nama_kelompok_produk')->filter()->unique()->toArray();
+                    ->getStateUsing(function (Supplier $record): array {
+                        return $record->products
+                            ->pluck('productGroup.nama_kelompok_produk')
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all();
                     })
-                    ->badge()
-                    ->separator(',')
-                    ->placeholder('Belum diisi'),
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->expandableLimitedList()
+                    ->placeholder('Belum diisi')
+                    ->wrap(),
 
-                Tables\Columns\TextColumn::make('product_detail_names')
+                Tables\Columns\TextColumn::make('produk_detail')
                     ->label('Produk Detail')
-                    ->icon('heroicon-m-cube')
-                    ->getStateUsing(function (Supplier $record) {
-                        $names = $record->products->pluck('nama_produk')->toArray();
-                        if (empty($names)) return null;
-                        if (count($names) <= 2) return implode(', ', $names);
-                        return implode(', ', array_slice($names, 0, 2)) . ' +' . (count($names) - 2) . ' lainnya';
+                    ->getStateUsing(function (Supplier $record): array {
+                        return $record->products
+                            ->pluck('nama_produk')
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all();
                     })
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->expandableLimitedList()
                     ->placeholder('Belum diisi')
                     ->wrap(),
 
@@ -288,6 +325,14 @@ class SupplierResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                'products.productGroup',
+            ]);
     }
 
     public static function getWidgets(): array

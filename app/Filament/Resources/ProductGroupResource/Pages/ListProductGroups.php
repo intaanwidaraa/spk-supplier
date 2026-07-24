@@ -28,4 +28,11 @@ class ListProductGroups extends ListRecords
                 ->icon('heroicon-m-plus'),
         ];
     }
+
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Resources\ProductGroupResource\Widgets\ProductGroupStatsOverview::class,
+        ];
+    }
 }

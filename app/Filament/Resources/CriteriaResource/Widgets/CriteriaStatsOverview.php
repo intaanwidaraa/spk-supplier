@@ -3,100 +3,33 @@
 namespace App\Filament\Resources\CriteriaResource\Widgets;
 
 use App\Models\Criteria;
-use Filament\Widgets\StatsOverviewWidget;
-use Filament\Widgets\StatsOverviewWidget\Stat;
+use App\Models\CriterionScoreGuideline;
+use Filament\Widgets\Widget;
 
-class CriteriaStatsOverview extends StatsOverviewWidget
+class CriteriaStatsOverview extends Widget
 {
-    /**
-     * Widget memenuhi lebar halaman.
-     */
+    protected static string $view = 'filament.resources.criteria-resource.widgets.criteria-stats-overview';
+
     protected int|string|array $columnSpan = 'full';
 
-    /**
-     * Nonaktifkan polling otomatis.
-     */
-    protected static ?string $pollingInterval = null;
+    public int $totalKriteria = 0;
+    public int $totalBenefit = 0;
+    public int $totalCost = 0;
+    public int $totalParameter = 0;
 
-    protected function getStats(): array
+    public function mount(): void
     {
-        $totalCriteria = Criteria::query()->count();
+        $this->totalKriteria = Criteria::query()->count();
 
-        $totalBobot = (float) Criteria::query()
-            ->sum('bobot_default');
+        $this->totalBenefit = Criteria::query()
+            ->where('atribut', 'BENEFIT')
+            ->count();
 
-        $isValid = abs($totalBobot - 100) < 0.00001;
+        $this->totalCost = Criteria::query()
+            ->where('atribut', 'COST')
+            ->count();
 
-        if ($isValid) {
-            $status = 'Bobot Valid';
-            $description =
-                'Total bobot tepat 100%';
-            $statusColor = 'success';
-            $statusIcon =
-                'heroicon-m-check-circle';
-        } elseif ($totalBobot < 100) {
-            $status = 'Bobot Belum Valid';
-            $description =
-                'Masih kurang '
-                . $this->formatWeight(
-                    100 - $totalBobot
-                )
-                . '%';
-
-            $statusColor = 'warning';
-            $statusIcon =
-                'heroicon-m-exclamation-triangle';
-        } else {
-            $status = 'Bobot Tidak Valid';
-            $description =
-                'Melebihi '
-                . $this->formatWeight(
-                    $totalBobot - 100
-                )
-                . '%';
-
-            $statusColor = 'danger';
-            $statusIcon =
-                'heroicon-m-x-circle';
-        }
-
-        return [
-            Stat::make(
-                'Total Kriteria',
-                $totalCriteria
-            ),
-
-            Stat::make(
-                'Total Bobot',
-                $this->formatWeight(
-                    $totalBobot
-                ) . '%'
-            ),
-
-            Stat::make(
-                'Status Validasi',
-                $status
-            )
-                ->description($description)
-                ->descriptionIcon($statusIcon)
-                ->color($statusColor),
-        ];
-    }
-
-    private function formatWeight(
-        float $value
-    ): string {
-        return rtrim(
-            rtrim(
-                number_format(
-                    $value,
-                    2,
-                    ',',
-                    '.'
-                ),
-                '0'
-            ),
-            ','
-        );
+        $this->totalParameter = CriterionScoreGuideline::query()
+            ->count();
     }
 }

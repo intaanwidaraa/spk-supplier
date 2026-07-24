@@ -31,5 +31,10 @@ class ListCriterias extends ListRecords
         ];
     }
 
-
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Resources\CriteriaResource\Widgets\CriteriaStatsOverview::class,
+        ];
+    }
 }

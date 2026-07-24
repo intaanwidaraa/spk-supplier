@@ -57,16 +57,12 @@ class SupplierPerformanceAssessment extends Model
      */
     public function calculateTotalScore(): float
     {
-        $scores = array_filter([
-            $this->c1_score,
-            $this->c2_score,
-            $this->c3_score,
-            $this->c4_score,
-            $this->c5_score,
-        ], fn ($s) => $s !== null);
+        $sum = ($this->c1_score ?? 0) + 
+               ($this->c2_score ?? 0) + 
+               ($this->c3_score ?? 0) + 
+               ($this->c4_score ?? 0) + 
+               ($this->c5_score ?? 0);
 
-        if (empty($scores)) return 0;
-
-        return round(array_sum($scores) / count($scores), 4);
+        return round($sum / 5, 4);
     }
 }

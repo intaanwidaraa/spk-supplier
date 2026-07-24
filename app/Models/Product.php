@@ -27,8 +27,12 @@ class Product extends Model
      */
     public function suppliers(): BelongsToMany
     {
-        return $this->belongsToMany(Supplier::class, 'supplier_products')
-            ->withTimestamps();
+        return $this->belongsToMany(
+            Supplier::class,
+            'product_supplier',
+            'product_id',
+            'supplier_id'
+        )->withTimestamps();
     }
 
     protected static function booted(): void

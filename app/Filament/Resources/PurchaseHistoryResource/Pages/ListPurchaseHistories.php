@@ -29,4 +29,11 @@ class ListPurchaseHistories extends ListRecords
                 ->icon('heroicon-m-plus'),
         ];
     }
+
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Resources\PurchaseHistoryResource\Widgets\PurchaseHistoryStatsOverview::class,
+        ];
+    }
 }

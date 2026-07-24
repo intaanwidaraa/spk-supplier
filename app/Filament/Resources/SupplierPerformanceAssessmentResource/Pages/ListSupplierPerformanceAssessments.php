@@ -12,6 +12,10 @@ class ListSupplierPerformanceAssessments extends ListRecords
 
     public function mount(): void
     {
+        if (auth()->check() && auth()->user()->isDirektur()) {
+            redirect()->to(\App\Filament\Resources\CalculationHistoryResource::getUrl('index'))->send();
+        }
+
         parent::mount();
 
         $exists = \App\Models\SupplierPerformanceAssessment::query()->exists();

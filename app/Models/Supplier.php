@@ -22,7 +22,8 @@ class Supplier extends Model
     }
 
     protected $casts = [
-        'masa_kerja_sama' => 'integer',
+        'masa_kerja_sama'           => 'integer',
+        'tanggal_awal_kerja_sama'   => 'date',
     ];
 
     public function purchaseHistories(): HasMany
@@ -38,8 +39,12 @@ class Supplier extends Model
      */
     public function products(): BelongsToMany
     {
-        return $this->belongsToMany(Product::class, 'supplier_products')
-            ->withTimestamps();
+        return $this->belongsToMany(
+            Product::class,
+            'product_supplier',
+            'supplier_id',
+            'product_id'
+        )->withTimestamps();
     }
 
     public function productGroup(): BelongsTo

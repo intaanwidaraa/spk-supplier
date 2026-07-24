@@ -18,7 +18,7 @@ class EvaluationPeriodResource extends Resource
 
     protected static ?string $navigationLabel = 'Periode Evaluasi';
 
-    protected static ?string $navigationGroup = 'Proses Evaluasi';
+    protected static ?string $navigationGroup = 'Analisis dan Perhitungan';
 
     protected static ?string $modelLabel = 'Periode Evaluasi';
 
@@ -26,7 +26,9 @@ class EvaluationPeriodResource extends Resource
 
     protected static ?string $slug = 'periode-evaluasi';
 
-    protected static ?int $navigationSort = 0;
+    protected static ?int $navigationSort = 3;
+
+    protected static bool $shouldRegisterNavigation = false;
 
     public static function form(Form $form): Form
     {

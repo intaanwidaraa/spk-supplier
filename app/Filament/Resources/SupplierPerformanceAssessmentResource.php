@@ -25,7 +25,7 @@ class SupplierPerformanceAssessmentResource extends Resource
 
     protected static ?string $navigationLabel = 'Data Penilaian Kinerja Supplier';
 
-    protected static ?string $navigationGroup = 'Proses Evaluasi';
+    protected static ?string $navigationGroup = 'Analisis dan Perhitungan';
 
     protected static ?string $modelLabel = 'Penilaian Kinerja';
 
@@ -33,7 +33,16 @@ class SupplierPerformanceAssessmentResource extends Resource
 
     protected static ?string $slug = 'supplier-performance-assessments';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
+
+    public static function getNavigationUrl(): string
+    {
+        if (auth()->check() && auth()->user()->isDirektur()) {
+            return CalculationHistoryResource::getUrl('index');
+        }
+
+        return parent::getNavigationUrl();
+    }
 
     public static function form(Form $form): Form
     {
@@ -246,6 +255,12 @@ class SupplierPerformanceAssessmentResource extends Resource
                         $record->status !== 'Final'),
             ])
             ->headerActions([
+                Tables\Actions\Action::make('lihatRiwayat')
+                    ->label('Lihat Riwayat Perhitungan')
+                    ->icon('heroicon-m-clock')
+                    ->color('gray')
+                    ->url(fn (): string => CalculationHistoryResource::getUrl('index')),
+
                 Tables\Actions\Action::make('refreshPerhitungan')
                     ->label('Refresh Perhitungan')
                     ->icon('heroicon-m-arrow-path')

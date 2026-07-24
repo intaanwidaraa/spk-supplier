@@ -139,13 +139,15 @@ class CriteriaResource extends Resource
                 Tables\Columns\TextColumn::make('kode_kriteria')
                     ->label('Kode')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->width('80px'),
 
                 Tables\Columns\TextColumn::make('nama_kriteria')
                     ->label('Jenis Kriteria')
                     ->searchable()
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->width('250px'),
 
                 Tables\Columns\TextColumn::make('atribut')
                     ->label('Atribut')
@@ -160,6 +162,8 @@ class CriteriaResource extends Resource
 
                 Tables\Columns\TextColumn::make('calculation_key')
                     ->label('Calculation Key')
+                    ->fontFamily('mono')
+                    ->size('xs')
                     ->searchable()
                     ->sortable(),
 
@@ -179,12 +183,13 @@ class CriteriaResource extends Resource
                 Tables\Columns\TextColumn::make('keterangan_summary')
                     ->label('Keterangan Parameter')
                     ->getStateUsing(function (Criteria $record) {
-                        return $record->scoreGuidelines->map(function ($guide) {
+                        return '<div class="leading-tight space-y-1 text-sm">' . $record->scoreGuidelines->map(function ($guide) {
                             $param = $guide->subcriteria ?? $guide->quantitative_parameter ?? '-';
-                            return "<strong>[{$guide->score}]</strong> {$param}";
-                        })->implode('<br>');
+                            return "<div><strong>[{$guide->score}]</strong> {$param}</div>";
+                        })->implode('') . '</div>';
                     })
                     ->html()
+                    ->wrap()
                     ->tooltip(function (Criteria $record) {
                         return $record->scoreGuidelines->map(function ($guide) {
                             $desc = $guide->subcriteria ?? $guide->quantitative_parameter;
@@ -231,7 +236,9 @@ class CriteriaResource extends Resource
 
     public static function getWidgets(): array
     {
-        return [];
+        return [
+            \App\Filament\Resources\CriteriaResource\Widgets\CriteriaStatsOverview::class,
+        ];
     }
 
     public static function getPages(): array
